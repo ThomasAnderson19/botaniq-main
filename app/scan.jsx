@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, Pressable, StyleSheet, Image, ActivityIndicator } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
@@ -20,7 +21,6 @@ export default function Scan() {
   }, []);
 
   if (!permission) {
-    // still loading permission state
     return (
       <View style={[styles.fill, styles.center]}>
         <ActivityIndicator />
@@ -34,9 +34,7 @@ export default function Scan() {
       <View style={[styles.fill, styles.center, { padding: 24 }]}>
         <Ionicons name="camera" size={48} color="#fff" />
         <Text style={styles.title}>Camera access needed</Text>
-        <Text style={styles.textDim}>
-          NatureScan needs your camera to scan plants and trees.
-        </Text>
+        <Text style={styles.textDim}>NatureScan needs your camera to scan plants and trees.</Text>
         <Pressable onPress={requestPermission} style={styles.primaryBtn}>
           <Text style={styles.primaryBtnText}>Allow Camera</Text>
         </Pressable>
@@ -56,13 +54,41 @@ export default function Scan() {
         exif: false,
         skipProcessing: true,
       });
-
-      // Go to result screen with the image URI
-      router.push({ pathname: "/preview", params: { uri: photo?.uri ?? "" } });
+      const uri = photo?.uri ?? "";
+      if (uri) setPreviewUri(uri);
+      router.push({ pathname: "/preview", params: { uri } });
     } catch (e) {
       console.warn("capture failed", e);
     } finally {
       setIsCapturing(false);
+    }
+  };
+
+  const pickFromLibrary = async () => {
+    try {
+      // Ask permission (first run)
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        alert("We need access to your photo library to pick a picture.");
+        return;
+      }
+
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 0.9,
+        selectionLimit: 1, // iOS 14+ (ignored on Android, only single asset anyway)
+      });
+
+      if (res.canceled) return;
+
+      const uri = res.assets?.[0]?.uri;
+      if (!uri) return;
+
+      setPreviewUri(uri);
+      router.push({ pathname: "/preview", params: { uri } });
+    } catch (e) {
+      console.warn("pickFromLibrary failed", e);
     }
   };
 
@@ -101,16 +127,16 @@ export default function Scan() {
 
       {/* Bottom capture UI */}
       <View style={styles.bottomBar}>
-        {/* Last shot thumbnail (for now just a preview) */}
-        <View style={styles.thumbWrap}>
+        {/* Left: open gallery */}
+        <Pressable onPress={pickFromLibrary} style={styles.thumbWrap}>
           {previewUri ? (
             <Image source={{ uri: previewUri }} style={styles.thumb} />
           ) : (
             <View style={[styles.thumb, styles.thumbPlaceholder]}>
-              <Ionicons name="image" size={16} color="#aaa" />
+              <Ionicons name="images" size={16} color="#aaa" />
             </View>
           )}
-        </View>
+        </Pressable>
 
         <Pressable
           onPress={onCapture}
@@ -155,7 +181,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingTop: 70,
-    
   },
   iconBtn: {
     height: 40,

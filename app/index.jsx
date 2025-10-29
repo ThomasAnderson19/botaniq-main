@@ -76,7 +76,7 @@ export default function Home() {
           <View style={[styles.appBar, { marginTop: 8 }]}>
           <View style={styles.appTitleRow}>
             <Ionicons name="leaf" size={22} color="#2c7a4b" style={{ marginRight: 8 }} />
-            <Text style={styles.appTitle}>Plant Scanner</Text>
+            <Text style={styles.appTitle}>Botaniq</Text>
           </View>
 
           {/* Quick access to My Plants in the top-right */}

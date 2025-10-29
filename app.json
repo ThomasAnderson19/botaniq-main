@@ -1,6 +1,6 @@
 {
   "expo": {
-    "scheme": "ukendtnavn", 
+    "scheme": "ukendtnavn",
     "name": "Ukendtnavn",
     "slug": "Ukendtnavn",
     "version": "1.0.0",
@@ -15,7 +15,8 @@
     },
     "ios": {
       "infoPlist": {
-        "NSCameraUsageDescription": "This app uses the camera to identify flowers and trees."
+        "NSCameraUsageDescription": "This app uses the camera to identify flowers and trees.",
+        "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to choose existing plant photos."
       },
       "supportsTablet": true
     },

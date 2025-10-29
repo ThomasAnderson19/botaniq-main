@@ -22,7 +22,7 @@ import { usePlants } from "./_lib/plantsStore";
 import { fetchFactsForPlant } from "./_lib/factsProvider";
 
 // Toggle mock data to save API credits
-const USE_FAKE_RESULTS = false;
+const USE_FAKE_RESULTS = true;
 
 export default function Details() {
   const scrollRef = React.useRef(null);
