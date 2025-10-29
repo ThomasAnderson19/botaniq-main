@@ -1,5 +1,5 @@
 // app/details.jsx
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -16,31 +16,50 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+// Bemærk: 'legacy'-import kan give issues i nyere Expo – beholdes her for kompatibilitet med din kodebase.
 import * as FileSystem from "expo-file-system/legacy";
 import { PLANT_ID_API_KEY } from "./_lib/plantId";
 import { usePlants } from "./_lib/plantsStore";
 import { fetchFactsForPlant } from "./_lib/factsProvider";
+import { useHistory } from "./_lib/historyStore";
 
-// Toggle mock data to save API credits
-const USE_FAKE_RESULTS = true;
+/** -----------------------------------------------------------
+ *  KONFIG
+ *  Skift til 'false' for at bruge rigtige API-kald (spar credits)
+ * ---------------------------------------------------------- */
+const USE_FAKE_RESULTS = false;
 
 export default function Details() {
-  const scrollRef = React.useRef(null);
+  // refs & navigation
+  const scrollRef = useRef(null);
   const router = useRouter();
+
+  // navigation params
   const { uri, saved } = useLocalSearchParams();
+
+  // dimensioner til galleri
   const { width } = useWindowDimensions();
+
+  // global store (til “My Plants”)
   const { addPlant } = usePlants();
 
+  // historik-store (til “Recent Scans”)
+  const { addHistory } = useHistory();
+
+  // lokal UI-state
   const [loading, setLoading] = useState(true);
-  const [ordered, setOrdered] = useState([]);            // all suggestions, sorted
-  const [currentIndex, setCurrentIndex] = useState(0);   // active suggestion
-  const [showOthers, setShowOthers] = useState(false);
-  const [active, setActive] = useState(0);               // gallery pager dot
-  const [facts, setFacts] = useState(null);
+  const [ordered, setOrdered] = useState([]);          // alle forslag, sorteret efter sikkerhed
+  const [currentIndex, setCurrentIndex] = useState(0); // aktuelt valg
+  const [showOthers, setShowOthers] = useState(false); // vis/skjul alternativer
+  const [active, setActive] = useState(0);             // pager-dot for galleri
+  const [facts, setFacts] = useState(null);            // “Quick Facts” data
   const [factsLoading, setFactsLoading] = useState(false);
 
-  // Parse saved plant if we navigated from /plants
-  const savedData = React.useMemo(() => {
+  /** -----------------------------------------------------------
+   *  Aflæs gemt plante (når man kommer fra /plants)
+   *  - JSON i route-param 'saved' dekodes sikkert
+   * ---------------------------------------------------------- */
+  const savedData = useMemo(() => {
     try {
       return saved ? JSON.parse(String(saved)) : null;
     } catch {
@@ -49,8 +68,14 @@ export default function Details() {
   }, [saved]);
   const isFromSaved = !!savedData;
 
+  /** -----------------------------------------------------------
+   *  Tilføj den aktuelle plante til “My Plants”
+   * ---------------------------------------------------------- */
   const onAddToMyPlants = () => {
+    const current = ordered[currentIndex];
     if (!current) return;
+
+    // brug første galleri-billede eller den oprindelige URI
     const heroImage = (current.gallery && current.gallery[0]) || String(uri);
 
     const didSave = addPlant({
@@ -59,7 +84,7 @@ export default function Details() {
       confidence: current.confidence ?? 0,
       image: heroImage,
       details: current.details || null,
-      facts: facts || null, // persist fetched facts (optional)
+      facts: facts || null, // gem evt. hentede facts
       savedAt: Date.now(),
     });
 
@@ -68,6 +93,9 @@ export default function Details() {
     }
   };
 
+  /** -----------------------------------------------------------
+   *  API-hjælpere til plant.id
+   * ---------------------------------------------------------- */
   const createIdentification = async (imagesArray) => {
     const res = await fetch("https://plant.id/api/v3/identification", {
       method: "POST",
@@ -91,6 +119,7 @@ export default function Details() {
       ].join(","),
       language: "en",
     }).toString();
+
     const res = await fetch(`https://plant.id/api/v3/identification/${token}?${params}`, {
       headers: { "Api-Key": PLANT_ID_API_KEY },
     });
@@ -99,8 +128,12 @@ export default function Details() {
     return JSON.parse(txt);
   };
 
+  /** -----------------------------------------------------------
+   *  Kør identifikation (mock eller rigtigt API)
+   * ---------------------------------------------------------- */
   const identify = useCallback(async () => {
     if (USE_FAKE_RESULTS) {
+      // Simulerer netværkstid + mock-svar
       await new Promise((r) => setTimeout(r, 500));
       const mock = [
         {
@@ -140,12 +173,15 @@ export default function Details() {
       return;
     }
 
+    // Valider fil-URI inden læsning
     if (!uri || !String(uri).startsWith("file://")) {
       throw new Error("Invalid file URI");
     }
 
+    // Læs billedet som base64
     const base64 = await FileSystem.readAsStringAsync(String(uri), { encoding: "base64" });
 
+    // 1) Opret identifikation (faldbag til data-URL, hvis 400)
     let created;
     try {
       created = await createIdentification([base64]);
@@ -157,9 +193,11 @@ export default function Details() {
       }
     }
 
+    // 2) Hent fulde resultater
     const token = created?.id || created?.access_token;
     const full = token ? await retrieveIdentification(token) : created;
 
+    // 3) Udtræk forslag (kompatibel med begge respons-strukturer)
     const suggestions =
       full?.result?.classification?.suggestions ??
       full?.result?.is_plant?.classification?.suggestions ??
@@ -173,6 +211,7 @@ export default function Details() {
       return;
     }
 
+    // 4) Map & sorter
     const mapped = suggestions
       .map((s) => ({
         label: s?.name || "Unknown",
@@ -183,17 +222,34 @@ export default function Details() {
       }))
       .sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
 
+    // Sørg for at der er mindst ét billede til topforslaget
     if (!mapped[0].gallery?.length && uri) mapped[0].gallery = [String(uri)];
+
+    // --- Log i historik (kun ved ny scanning; denne kode kører ikke når man åbner fra 'saved') ---
+    try {
+      const top = mapped[0];
+      addHistory({
+        name: top.details?.common_names?.[0] || top.label,
+        sci: top.sci || top.label,
+        confidence: top.confidence ?? null,
+        image: (top.gallery && top.gallery[0]) || (uri ? String(uri) : null),
+      });
+    } catch (e) {
+      // bevidst stille fejl — historik må ikke blokere flowet
+      console.warn("addHistory failed:", e?.message || e);
+    }
 
     setOrdered(mapped);
     setCurrentIndex(0);
     setLoading(false);
-  }, [uri]);
+  }, [uri, addHistory]);
 
-  // 🔁 Unified mount effect: hydrate from saved OR run identify for new scans
+  /** -----------------------------------------------------------
+   *  Mount: Hydrer fra gemt eller kør ny identifikation
+   * ---------------------------------------------------------- */
   useEffect(() => {
     if (savedData) {
-      // Opened from My Plants → hydrate UI from saved item and skip identify()
+      // Åbnet fra “My Plants” → hydrer og spring identify() over
       const hydrated = {
         label: savedData.name || savedData.sci || "Unknown",
         sci: savedData.sci || savedData.name || "Unknown",
@@ -206,74 +262,82 @@ export default function Details() {
       setCurrentIndex(0);
       setLoading(false);
 
-      // Seed any stored facts for instant Quick Facts display
+      // Vis evt. gemte facts med det samme
       setFacts(savedData.facts || null);
-      return; // ✅ skip identify()
+      return;
     }
 
-    // New scan path → clear old facts, then run identify()
-    setFacts(null); // 🧹 clear previous facts
+    // Ny scanning → nulstil facts og kør identifikation
+    setFacts(null);
     setLoading(true);
     identify().catch((e) => {
       setLoading(false);
-      Alert.alert(
-        "Identification failed",
-        String(e?.message || "Unknown error").slice(0, 300)
-      );
+      Alert.alert("Identification failed", String(e?.message || "Unknown error").slice(0, 300));
     });
   }, [identify, savedData]);
 
+  /** -----------------------------------------------------------
+   *  Afledte værdier til UI
+   * ---------------------------------------------------------- */
   const current = ordered[currentIndex];
-  const others = ordered.filter((_, i) => i !== currentIndex).slice(0, 2);
+  const others = useMemo(
+    () => ordered.filter((_, i) => i !== currentIndex).slice(0, 2),
+    [ordered, currentIndex]
+  );
 
-  // Fetch Quick Facts whenever the current plant changes
- // Fetch Quick Facts whenever the current plant changes
-useEffect(() => {
-  let cancelled = false;
+  /** -----------------------------------------------------------
+   *  Hent “Quick Facts”, når aktuel plante ændrer sig
+   * ---------------------------------------------------------- */
+  useEffect(() => {
+    let cancelled = false;
 
-  async function go() {
-    if (!current) return;
-    setFacts(null);
-    setFactsLoading(true);
-    try {
-      const q =
-        current?.sci ||
-        current?.details?.common_names?.[0] ||
-        current?.label;
+    async function go() {
+      if (!current) return;
+      setFacts(null);
+      setFactsLoading(true);
+      try {
+        const q =
+          current?.sci ||
+          current?.details?.common_names?.[0] ||
+          current?.label;
 
-      console.log("[facts] query:", q);
-      const data = await fetchFactsForPlant(q);
-      console.log("[facts] result:", data);
-
-      if (!cancelled) setFacts(data);
-    } catch (e) {
-      console.warn("[facts] fetch error:", e?.message || e);
-    } finally {
-      if (!cancelled) setFactsLoading(false);
+        const data = await fetchFactsForPlant(q);
+        if (!cancelled) setFacts(data);
+      } catch {
+        // Bevidst stille fejlhåndtering (UI falder bare tilbage uden facts)
+      } finally {
+        if (!cancelled) setFactsLoading(false);
+      }
     }
-  }
 
-  go();
-  return () => { cancelled = true; };
-}, [current?.sci, current?.details?.common_names?.[0], current?.label]);
+    go();
+    return () => { cancelled = true; };
+  }, [current?.sci, current?.details?.common_names?.[0], current?.label]);
 
-
+  /** -----------------------------------------------------------
+   *  Små helpers til labels/badges
+   * ---------------------------------------------------------- */
   const percent = (n) => `${Math.round((Number(n) || 0) * 100)}%`;
+
   const careBadge = (d) => {
-    if (!d?.watering) return "Moderate to Care";
+    if (!d?.watering) return "Moderate Care";
     const avg = ((d.watering.min ?? 0.5) + (d.watering.max ?? 0.5)) / 2;
-    return avg <= 0.25 ? "Easy Care" : avg <= 0.55 ? "Moderate to Care" : "Thirsty";
+    return avg <= 0.25 ? "Easy Care" : avg <= 0.55 ? "Moderate Care" : "Thirsty";
   };
+
   const edibleBadge = (d) => (d?.edible_parts?.length ? "Edible" : "Not edible");
+
   const floweringBadge = (d) =>
     d?.wiki_description?.value?.toLowerCase?.().includes("flower") ? "Flowering" : "Foliage";
 
+  // Galleri & pager
   const gallery = current?.gallery || [];
   const onScrollEnd = (e) => {
     const i = Math.round(e.nativeEvent.contentOffset.x / width);
     setActive(i);
   };
 
+  // Vælg alternativt forslag som aktivt
   const promote = (option) => {
     const idx = ordered.findIndex((x) => x.label === option.label);
     if (idx >= 0) {
@@ -283,6 +347,7 @@ useEffect(() => {
     }
   };
 
+  // Tilbage-knap: hop til topforslag først, ellers router.back()
   const onBackPress = () => {
     if (currentIndex !== 0) {
       setCurrentIndex(0);
@@ -292,41 +357,52 @@ useEffect(() => {
     }
   };
 
+  // Udled “Learn more”-URL og kort beskrivelse
   const learnUrl = current?.details?.url || facts?.wikiUrl || null;
-  const descText =
-    current?.details?.wiki_description?.value || facts?.wikiSummary || null;
+  const descText = current?.details?.wiki_description?.value || facts?.wikiSummary || null;
 
   return (
     <View style={styles.fill}>
+      {/* Øverste bar (sikker zone til statusbar) */}
       <SafeAreaView style={styles.topBar}>
         <Pressable onPress={onBackPress} style={styles.iconBtn}>
           <Ionicons name="chevron-back" size={26} color="#2c7a4b" />
         </Pressable>
 
-        {!isFromSaved && (
-          <Text style={styles.topTitle}>Result</Text>
-        )}
+        {!isFromSaved && <Text style={styles.topTitle}>Result</Text>}
 
-        <View style={{ width: 40 }} />
+        {/* Home-knap (øverste højre) */}
+        <Pressable
+          onPress={() => router.replace("/")} // brug .push("/") hvis du vil bevare historikken
+          style={styles.iconBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Go to Home"
+        >
+          <Ionicons name="home-outline" size={22} color="#2c7a4b" />
+        </Pressable>
       </SafeAreaView>
 
+      {/* Hovedindhold */}
       {loading ? (
+        // Loader-state
         <View style={[styles.fill, styles.center]}>
           <ActivityIndicator />
           <Text style={{ color: "#215a37", marginTop: 8 }}>Identifying…</Text>
         </View>
       ) : !current ? (
+        // Tomt-state (ingen forslag)
         <View style={[styles.fill, styles.center]}>
           <Text style={{ color: "#215a37" }}>No result</Text>
         </View>
       ) : (
+        // Resultatvisning
         <ScrollView
           ref={scrollRef}
           style={styles.scroll}
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
-          {/* Swipeable gallery */}
+          {/* Swipebart galleri */}
           <View style={{ width: "100%" }}>
             <FlatList
               data={gallery}
@@ -346,7 +422,7 @@ useEffect(() => {
             </View>
           </View>
 
-          {/* Info section */}
+          {/* Info-sektion */}
           <View style={styles.info}>
             <Text style={styles.plantName}>
               {current.details?.common_names?.[0] || current.label}
@@ -395,9 +471,10 @@ useEffect(() => {
               <Pressable
                 onPress={() => {
                   setShowOthers((s) => !s);
+                  // Scroll en anelse efter render, så alternativer kommer i fokus
                   setTimeout(() => {
                     scrollRef.current?.scrollToEnd({ animated: true });
-                  }, 200); // slight delay to ensure alt section renders
+                  }, 200);
                 }}
                 style={{ marginTop: 20 }}
               >
@@ -446,10 +523,7 @@ useEffect(() => {
                       />
                     )}
                     {facts?.waterFrequency && (
-                      <FactTile
-                        icon="water-outline"
-                        text={facts.waterFrequency}
-                      />
+                      <FactTile icon="water-outline" text={facts.waterFrequency} />
                     )}
                   </View>
 
@@ -473,7 +547,7 @@ useEffect(() => {
             </View>
           )}
 
-          {/* Alternatives */}
+          {/* Alternativer */}
           {showOthers && others.length > 0 && (
             <View style={styles.altWrap}>
               {others.map((opt, idx) => (
@@ -501,7 +575,9 @@ useEffect(() => {
   );
 }
 
-/* ---- Small Chip component (nature themed) ---- */
+/* -------------------------------------------------------------
+ *  Små præsentationskomponenter
+ * ------------------------------------------------------------*/
 function Chip({ icon, label }) {
   return (
     <View style={chipStyles.wrap}>
@@ -511,7 +587,6 @@ function Chip({ icon, label }) {
   );
 }
 
-/* ---- Quick Facts helpers ---- */
 function FactRow({ icon, label, big }) {
   return (
     <View style={[styles.qfCard, big && { paddingVertical: 14 }]}>
@@ -548,8 +623,9 @@ function FactListRow({ title, subtitle }) {
   );
 }
 
-/* ---- Styles ---- */
-// 🌿 Nature-themed styles
+/* -------------------------------------------------------------
+ *  Styles (natur-tema)
+ * ------------------------------------------------------------*/
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: "#e9f7ef" },
   scroll: { flex: 1 },
@@ -741,7 +817,7 @@ const styles = StyleSheet.create({
   altPct: { color: "#2c7a4b", fontWeight: "800" },
 });
 
-/* Updated chip styling to match theme */
+/* Opdateret chip-styling så den matcher temaet */
 const chipStyles = StyleSheet.create({
   wrap: {
     flexDirection: "row",

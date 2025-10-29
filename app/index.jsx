@@ -1,5 +1,5 @@
 // app/index.jsx
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -20,9 +20,13 @@ const BUTTON_SIZE = 180;
 export default function Home() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const [infoOpen, setInfoOpen] = useState(false);
 
-  // --- pulse glow for main Scan button ---
+  /** -----------------------------------------------------------
+   *  ANIMATION: Pulserende glød bag Scan-knappen
+   * ---------------------------------------------------------- */
   const pulse = useRef(new Animated.Value(0)).current;
+
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
@@ -49,14 +53,18 @@ export default function Home() {
     opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0] }),
   };
 
+  /** -----------------------------------------------------------
+   *  NAVIGATION
+   * ---------------------------------------------------------- */
   const onPressScan = () => router.push("/scan");
   const onPressPlants = () => router.push("/plants");
+  const onPressHistory = () => router.push("/history"); // You can create this later
 
   return (
     <View style={styles.container}>
       <StatusBar style="dark" translucent backgroundColor="transparent" />
 
-      {/* Soft nature gradient background */}
+      {/* Blød naturbaggrund med gradient */}
       <LinearGradient
         colors={["#e9f7ef", "#d6f0e0", "#cbead7"]}
         start={{ x: 0, y: 0 }}
@@ -64,40 +72,92 @@ export default function Home() {
         style={StyleSheet.absoluteFill}
       />
 
-      {/* Organic leaf-like blobs (decorative, low opacity) */}
+      {/* Dekorative “blobs” */}
       <View pointerEvents="none" style={StyleSheet.absoluteFill}>
         <View style={[styles.blob, styles.blobA]} />
         <View style={[styles.blob, styles.blobB]} />
         <View style={[styles.blob, styles.blobC]} />
       </View>
 
-<SafeAreaView style={StyleSheet.absoluteFill} edges={["left", "right", ]}>
+      {/* SafeArea for kanter */}
+      <SafeAreaView style={StyleSheet.absoluteFill} edges={["left", "right"]}>
         {/* App Bar */}
-          <View style={[styles.appBar, { marginTop: 8 }]}>
+        <View style={[styles.appBar, { marginTop: 8 }]}>
           <View style={styles.appTitleRow}>
             <Ionicons name="leaf" size={22} color="#2c7a4b" style={{ marginRight: 8 }} />
             <Text style={styles.appTitle}>Botaniq</Text>
           </View>
 
-          {/* Quick access to My Plants in the top-right */}
+          {/* Info button */}
           <Pressable
-            onPress={onPressPlants}
+            onPress={() => setInfoOpen((v) => !v)}
             android_ripple={{ borderless: true, radius: 22 }}
             style={({ pressed }) => [
-              styles.topMyPlants,
-              pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
+              styles.infoButton,
+              pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
             ]}
             accessibilityRole="button"
-            accessibilityLabel="Open My Plants"
+            accessibilityLabel="Open information"
+            accessibilityState={{ expanded: infoOpen }}
           >
-            <Ionicons name="pricetag" size={18} color="#2c7a4b" />
-            <Text style={styles.topMyPlantsText}>My Plants</Text>
+            <Ionicons
+              name={infoOpen ? "help-circle" : "help"}
+              size={18}
+              color={infoOpen ? "#fff" : "#2c7a4b"}
+            />
           </Pressable>
         </View>
 
-        {/* Main area */}
+        {/* Info Box */}
+        {infoOpen && (
+          <>
+            <Pressable
+              onPress={() => setInfoOpen(false)}
+              style={StyleSheet.absoluteFill}
+              accessibilityLabel="Close info"
+            />
+            <View
+              style={[
+                styles.infoBox,
+                { top: insets.top + 66, right: 16 },
+              ]}
+              pointerEvents="box-none"
+            >
+              <View style={styles.infoPointer} />
+              <View style={styles.infoContent}>
+                <Text style={styles.infoTitle}>How scanning works</Text>
+                <Text style={styles.infoText}>
+                  Use good, even light. Hold your camera steady and fill the frame with
+                  the plant’s leaf or flower. We’ll compare it to our database and
+                  suggest the best matches.
+                </Text>
+
+                <View style={styles.infoRow}>
+                  <Ionicons name="sunny-outline" size={16} color="#2c7a4b" />
+                  <Text style={styles.infoBullet}> Better light → better results</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Ionicons name="leaf-outline" size={16} color="#2c7a4b" />
+                  <Text style={styles.infoBullet}> Try multiple angles if unsure</Text>
+                </View>
+
+                <Pressable
+                  onPress={() => setInfoOpen(false)}
+                  style={({ pressed }) => [
+                    styles.infoClose,
+                    pressed && { opacity: 0.95, transform: [{ scale: 0.99 }] },
+                  ]}
+                  android_ripple={{ color: "rgba(0,0,0,0.06)", radius: 120 }}
+                >
+                  <Text style={styles.infoCloseText}>Got it</Text>
+                </Pressable>
+              </View>
+            </View>
+          </>
+        )}
+
+        {/* Hovedindhold */}
         <View style={styles.center}>
-          {/* Calm “nature” hint with icon + text */}
           <View style={styles.headerCopy}>
             <Text style={styles.title}>Identify plants with a scan</Text>
             <Text style={styles.subtitle}>
@@ -105,7 +165,7 @@ export default function Home() {
             </Text>
           </View>
 
-          {/* Large Scan button with leafy outline */}
+          {/* Stor Scan-knap */}
           <View style={styles.buttonWrap}>
             <Animated.View style={[styles.glow, glowStyle]}>
               <LinearGradient
@@ -131,22 +191,8 @@ export default function Home() {
           </View>
         </View>
 
-        {/* Bottom bar with two clear actions */}
+        {/* Nederste handlingslinje */}
         <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-          <Pressable
-            onPress={onPressScan}
-            style={({ pressed }) => [
-              styles.primaryAction,
-              pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] },
-            ]}
-            android_ripple={{ color: "rgba(0,0,0,0.06)", radius: 140 }}
-            accessibilityRole="button"
-            accessibilityLabel="Scan a plant"
-          >
-            <Ionicons name="camera" size={22} color="#fff" />
-            <Text style={styles.primaryActionText}>Scan</Text>
-          </Pressable>
-
           <Pressable
             onPress={onPressPlants}
             style={({ pressed }) => [
@@ -154,11 +200,21 @@ export default function Home() {
               pressed && { opacity: 0.95, transform: [{ scale: 0.99 }] },
             ]}
             android_ripple={{ color: "rgba(44,122,75,0.08)", radius: 140 }}
-            accessibilityRole="button"
-            accessibilityLabel="Go to My Plants"
           >
             <Ionicons name="leaf-outline" size={22} color="#2c7a4b" />
             <Text style={styles.secondaryActionText}>My Plants</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={onPressHistory}
+            style={({ pressed }) => [
+              styles.secondaryAction,
+              pressed && { opacity: 0.95, transform: [{ scale: 0.99 }] },
+            ]}
+            android_ripple={{ color: "rgba(44,122,75,0.08)", radius: 140 }}
+          >
+            <Ionicons name="time-outline" size={22} color="#2c7a4b" />
+            <Text style={styles.secondaryActionText}>Recent Scans</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -166,6 +222,9 @@ export default function Home() {
   );
 }
 
+/* -------------------------------------------------------------
+ *  STYLES
+ * ------------------------------------------------------------*/
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#e9f7ef" },
 
@@ -184,34 +243,83 @@ const styles = StyleSheet.create({
     fontWeight: Platform.select({ ios: "700", android: "bold" }),
     letterSpacing: 0.3,
   },
-  topMyPlants: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+
+  infoButton: {
+    height: 36,
+    width: 36,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.9)",
-    borderWidth: 1,
-    borderColor: "rgba(44,122,75,0.18)",
-  },
-  topMyPlantsText: {
-    marginLeft: 6,
-    color: "#2c7a4b",
-    fontSize: 14,
-    fontWeight: "600",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent",
+    borderWidth: 2,
+    borderColor: "#215a37",
+    shadowColor: "#000",
+    shadowOpacity: Platform.select({ ios: 0.08, android: 0.1 }),
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
 
-  // Decorative blobs (organic shapes)
+  // Decorative blobs
   blob: {
     position: "absolute",
-    backgroundColor: "#bfe8cf",
-    opacity: 0.30,
+    backgroundColor: "#7cf6aaff",
+    opacity: 0.3,
     borderRadius: 200,
     transform: [{ rotate: "12deg" }],
   },
   blobA: { width: 220, height: 220, top: -40, left: -60 },
   blobB: { width: 160, height: 160, top: 120, right: -50, transform: [{ rotate: "-8deg" }] },
   blobC: { width: 260, height: 260, bottom: -70, left: -40, transform: [{ rotate: "18deg" }] },
+
+  // Info box
+  infoBox: { position: "absolute", maxWidth: 320, zIndex: 20 },
+  infoPointer: {
+    position: "absolute",
+    top: -6,
+    right: 16,
+    width: 12,
+    height: 12,
+    backgroundColor: "#fff",
+    borderLeftWidth: 1,
+    borderTopWidth: 1,
+    borderColor: "rgba(44,122,75,0.18)",
+    transform: [{ rotate: "45deg" }],
+  },
+  infoContent: {
+    backgroundColor: "#fff",
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "rgba(44,122,75,0.18)",
+    shadowColor: "#000",
+    shadowOpacity: Platform.select({ ios: 0.12, android: 0.18 }),
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
+  },
+  infoTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#1f4d31",
+    marginBottom: 6,
+  },
+  infoText: {
+    fontSize: 14,
+    color: "rgba(33,90,55,0.9)",
+    marginBottom: 8,
+  },
+  infoRow: { flexDirection: "row", alignItems: "center", marginBottom: 4 },
+  infoBullet: { fontSize: 14, color: "#2c7a4b" },
+  infoClose: {
+    alignSelf: "flex-end",
+    backgroundColor: "rgba(44,122,75,0.08)",
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginTop: 6,
+  },
+  infoCloseText: { color: "#2c7a4b", fontWeight: "700" },
 
   // Center section
   center: {
@@ -235,7 +343,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  // Big scan button area
   buttonWrap: {
     width: BUTTON_SIZE + 64,
     height: BUTTON_SIZE + 64,
@@ -246,7 +353,6 @@ const styles = StyleSheet.create({
   },
   glow: { ...StyleSheet.absoluteFillObject, borderRadius: 999, overflow: "hidden" },
 
-  // Leafy ring: subtle wood/leaf outline vibe
   leafyRing: {
     position: "absolute",
     height: BUTTON_SIZE + 24,
@@ -271,41 +377,13 @@ const styles = StyleSheet.create({
     borderWidth: 6,
     borderColor: "rgba(255,255,255,0.75)",
   },
-  scanLabel: {
-    color: "#fff",
-    marginTop: 8,
-    fontSize: 16,
-    fontWeight: "700",
-    letterSpacing: 0.3,
-  },
 
-  // Bottom actions
+  // Bottom bar
   bottomBar: {
     paddingTop: 10,
     paddingHorizontal: 16,
     flexDirection: "row",
     gap: 10,
-  },
-  primaryAction: {
-    flex: 1,
-    backgroundColor: "#2BB94F",
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    gap: 8,
-    shadowColor: "#2BB94F",
-    shadowOpacity: Platform.select({ ios: 0.25, android: 0.3 }),
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
-  },
-  primaryActionText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
-    letterSpacing: 0.2,
   },
   secondaryAction: {
     flex: 1,
